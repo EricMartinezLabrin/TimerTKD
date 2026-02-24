@@ -19,6 +19,8 @@ export default function HomeScreen() {
   const [redScore, setRedScore] = useState(0);
   const [blueFouls, setBlueFouls] = useState(0);
   const [redFouls, setRedFouls] = useState(0);
+  const [blueName, setBlueName] = useState('Azul');
+  const [redName, setRedName] = useState('Rojo');
 
   const [durationInput, setDurationInput] = useState(String(DEFAULT_TIME_SECONDS));
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_TIME_SECONDS);
@@ -214,9 +216,10 @@ export default function HomeScreen() {
 
         <View style={styles.scoreboardRow}>
           <CompetitorCard
-            label="Azul"
+            label={blueName}
             score={blueScore}
             fouls={blueFouls}
+            onChangeLabel={setBlueName}
             onIncreaseScore={() => increaseScore('azul')}
             onDecreaseScore={() => decreaseScore('azul')}
             onIncreaseFoul={() => setBlueFouls((value) => value + 1)}
@@ -224,9 +227,10 @@ export default function HomeScreen() {
           />
 
           <CompetitorCard
-            label="Rojo"
+            label={redName}
             score={redScore}
             fouls={redFouls}
+            onChangeLabel={setRedName}
             onIncreaseScore={() => increaseScore('rojo')}
             onDecreaseScore={() => decreaseScore('rojo')}
             onIncreaseFoul={() => setRedFouls((value) => value + 1)}
@@ -313,6 +317,7 @@ type CompetitorCardProps = {
   label: string;
   score: number;
   fouls: number;
+  onChangeLabel: (value: string) => void;
   onIncreaseScore: () => void;
   onDecreaseScore: () => void;
   onIncreaseFoul: () => void;
@@ -323,6 +328,7 @@ function CompetitorCard({
   label,
   score,
   fouls,
+  onChangeLabel,
   onIncreaseScore,
   onDecreaseScore,
   onIncreaseFoul,
@@ -367,7 +373,13 @@ function CompetitorCard({
 
   return (
     <View style={styles.competitorCard}>
-      <Text style={styles.competitorLabel}>{label}</Text>
+      <TextInput
+        value={label}
+        onChangeText={onChangeLabel}
+        placeholder="Nombre"
+        placeholderTextColor="rgba(255,255,255,0.6)"
+        style={styles.competitorLabelInput}
+      />
 
       <View style={styles.scoreZone} {...scoreGestureResponder.panHandlers}>
         <Text style={styles.scoreValue}>{score}</Text>
@@ -469,9 +481,11 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   infoButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    position: 'absolute',
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.45)',
     backgroundColor: 'rgba(0,0,0,0.22)',
@@ -480,9 +494,9 @@ const styles = StyleSheet.create({
   },
   infoIcon: {
     color: '#ffffff',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '900',
-    lineHeight: 20,
+    lineHeight: 16,
   },
   scoreboardRow: {
     flex: 1,
@@ -496,12 +510,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 8,
   },
-  competitorLabel: {
-    fontSize: 34,
+  competitorLabelInput: {
+    fontSize: 40,
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
     letterSpacing: 1,
+    paddingVertical: 2,
   },
   scoreZone: {
     flex: 1,
@@ -510,9 +525,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scoreValue: {
-    fontSize: 88,
+    fontSize: 104,
     fontWeight: '900',
-    lineHeight: 92,
+    lineHeight: 108,
     color: '#ffffff',
   },
   foulsBlock: {
