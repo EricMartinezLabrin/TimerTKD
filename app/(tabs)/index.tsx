@@ -334,6 +334,7 @@ function CompetitorCard({
   onIncreaseFoul,
   onDecreaseFoul,
 }: CompetitorCardProps) {
+  const [isEditingName, setIsEditingName] = useState(false);
   const gestureStartTime = useRef(0);
 
   const scoreGestureResponder = useMemo(
@@ -373,13 +374,25 @@ function CompetitorCard({
 
   return (
     <View style={styles.competitorCard}>
-      <TextInput
-        value={label}
-        onChangeText={onChangeLabel}
-        placeholder="Nombre"
-        placeholderTextColor="rgba(255,255,255,0.6)"
-        style={styles.competitorLabelInput}
-      />
+      <View style={styles.competitorHeaderRow}>
+        {isEditingName ? (
+          <TextInput
+            value={label}
+            onChangeText={onChangeLabel}
+            placeholder="Nombre"
+            placeholderTextColor="rgba(255,255,255,0.6)"
+            style={styles.competitorLabelInput}
+            autoFocus
+            onBlur={() => setIsEditingName(false)}
+          />
+        ) : (
+          <Text style={styles.competitorLabelText}>{label}</Text>
+        )}
+
+        <Pressable style={styles.nameEditButton} onPress={() => setIsEditingName((value) => !value)}>
+          <Ionicons name="pencil" size={16} color="#ffffff" />
+        </Pressable>
+      </View>
 
       <View style={styles.scoreZone} {...scoreGestureResponder.panHandlers}>
         <Text style={styles.scoreValue}>{score}</Text>
@@ -510,13 +523,39 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 8,
   },
+  competitorHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    gap: 8,
+  },
+  competitorLabelText: {
+    flex: 1,
+    fontSize: 40,
+    fontWeight: '900',
+    color: '#ffffff',
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
   competitorLabelInput: {
+    flex: 1,
     fontSize: 40,
     fontWeight: '900',
     color: '#ffffff',
     textAlign: 'center',
     letterSpacing: 1,
     paddingVertical: 2,
+  },
+  nameEditButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.38)',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scoreZone: {
     flex: 1,
