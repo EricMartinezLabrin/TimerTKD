@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer, type VideoSource } from 'expo-video';
-import { Animated, Modal, PanResponder, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSoundEffects } from '@/hooks/use-sound-effects';
 
 const DEFAULT_TIME_SECONDS = 60;
 const OVERLAY_DURATION_MS = 5000;
@@ -21,6 +22,7 @@ export default function HomeScreen() {
   const [redFouls, setRedFouls] = useState(0);
   const [blueName, setBlueName] = useState('Azul');
   const [redName, setRedName] = useState('Rojo');
+  const [isSwapped, setIsSwapped] = useState(false);
 
   const [durationInput, setDurationInput] = useState(String(DEFAULT_TIME_SECONDS));
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_TIME_SECONDS);
@@ -33,6 +35,8 @@ export default function HomeScreen() {
   const sourceSwapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startVideoOverlayAnimationRef = useRef(startVideoOverlayAnimation);
+
+  const { playSound } = useSoundEffects();
 
   startVideoOverlayAnimationRef.current = startVideoOverlayAnimation;
 
@@ -114,7 +118,10 @@ export default function HomeScreen() {
     setIsRunning((previous) => {
       const nextIsRunning = !previous;
       if (nextIsRunning) {
+        playSound('timerStart');
         showRandomStartVideo();
+      } else {
+        playSound('timerPause');
       }
       return nextIsRunning;
     });
@@ -173,6 +180,7 @@ export default function HomeScreen() {
   };
 
   const increaseScore = (color: CompetitorColor) => {
+    playSound('scoreUp');
     if (color === 'azul') {
       setBlueScore((value) => value + 1);
       return;
@@ -182,6 +190,7 @@ export default function HomeScreen() {
   };
 
   const decreaseScore = (color: CompetitorColor) => {
+    playSound('scoreDown');
     if (color === 'azul') {
       setBlueScore((value) => Math.max(0, value - 1));
       return;
@@ -190,11 +199,113 @@ export default function HomeScreen() {
     setRedScore((value) => Math.max(0, value - 1));
   };
 
+  const handleIncreaseFoul = (color: CompetitorColor) => {
+    playSound('foulUp');
+    if (color === 'azul') {
+      setBlueFouls((value) => value + 1);
+    } else {
+      setRedFouls((value) => value + 1);
+    }
+  };
+
+  const handleDecreaseFoul = (color: CompetitorColor) => {
+    playSound('foulDown');
+    if (color === 'azul') {
+      setBlueFouls((value) => Math.max(0, value - 1));
+    } else {
+      setRedFouls((value) => Math.max(0, value - 1));
+    }
+  };
+
+  const handleSwap = () => {
+    setIsSwapped((prev) => !prev);
+  };
+
+  const handleCast = async () => {
+    if (Platform.OS === 'web') {
+      try {
+        // Use the Presentation API if available (Chrome)
+        if ('presentation' in navigator && (navigator as PresentationNavigator).presentation?.defaultRequest !== undefined) {
+          const request = new PresentationRequest([window.location.href]);
+          await request.start();
+          return;
+        }
+
+        // Fallback: open in a new window to cast via browser tab casting
+        window.open(window.location.href, '_blank');
+      } catch {
+        // User cancelled or not supported
+      }
+      return;
+    }
+
+    // On native, we'll show a simple alert hinting use screen mirroring (no native Chromecast SDK without extra deps)
+    const { Alert } = await import('react-native');
+    Alert.alert(
+      'Compartir pantalla',
+      'Usa la función de duplicar pantalla (Screen Mirroring) de tu dispositivo para transmitir a un Chromecast o TV compatible.',
+      [{ text: 'Entendido' }]
+    );
+  };
+
+  // Determine which competitor data goes on left vs right
+  const leftCompetitor = isSwapped
+    ? {
+        label: redName,
+        score: redScore,
+        fouls: redFouls,
+        onChangeLabel: setRedName,
+        onIncreaseScore: () => increaseScore('rojo'),
+        onDecreaseScore: () => decreaseScore('rojo'),
+        onIncreaseFoul: () => handleIncreaseFoul('rojo'),
+        onDecreaseFoul: () => handleDecreaseFoul('rojo'),
+        pencilSide: 'right' as const,
+      }
+    : {
+        label: blueName,
+        score: blueScore,
+        fouls: blueFouls,
+        onChangeLabel: setBlueName,
+        onIncreaseScore: () => increaseScore('azul'),
+        onDecreaseScore: () => decreaseScore('azul'),
+        onIncreaseFoul: () => handleIncreaseFoul('azul'),
+        onDecreaseFoul: () => handleDecreaseFoul('azul'),
+        pencilSide: 'left' as const,
+      };
+
+  const rightCompetitor = isSwapped
+    ? {
+        label: blueName,
+        score: blueScore,
+        fouls: blueFouls,
+        onChangeLabel: setBlueName,
+        onIncreaseScore: () => increaseScore('azul'),
+        onDecreaseScore: () => decreaseScore('azul'),
+        onIncreaseFoul: () => handleIncreaseFoul('azul'),
+        onDecreaseFoul: () => handleDecreaseFoul('azul'),
+        pencilSide: 'left' as const,
+      }
+    : {
+        label: redName,
+        score: redScore,
+        fouls: redFouls,
+        onChangeLabel: setRedName,
+        onIncreaseScore: () => increaseScore('rojo'),
+        onDecreaseScore: () => decreaseScore('rojo'),
+        onIncreaseFoul: () => handleIncreaseFoul('rojo'),
+        onDecreaseFoul: () => handleDecreaseFoul('rojo'),
+        pencilSide: 'right' as const,
+      };
+
+  // Background colors based on swap state
+  const leftBgColor = isSwapped ? '#dc2626' : '#0b51ff';
+  const rightBgColor = isSwapped ? '#0b51ff' : '#dc2626';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View pointerEvents="none" style={styles.backgroundLayer}>
-        <View style={styles.leftHalf} />
-        <View style={styles.rightHalf} />
+        <View style={[styles.leftHalf, { backgroundColor: leftBgColor }]} />
+        <View style={[styles.rightHalf, { backgroundColor: rightBgColor }]} />
       </View>
 
       <View style={styles.container}>
@@ -209,32 +320,40 @@ export default function HomeScreen() {
             </Pressable>
           </View>
 
-          <Pressable style={styles.infoButton} onPress={() => setIsHelpVisible(true)}>
-            <Text style={styles.infoIcon}>i</Text>
-          </Pressable>
+          <View style={styles.topRightButtons}>
+            <Pressable style={styles.castButton} onPress={handleCast}>
+              <Ionicons name="tv-outline" size={16} color="#ffffff" />
+            </Pressable>
+
+            <Pressable style={styles.infoButton} onPress={() => setIsHelpVisible(true)}>
+              <Text style={styles.infoIcon}>i</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.scoreboardRow}>
           <CompetitorCard
-            label={blueName}
-            score={blueScore}
-            fouls={blueFouls}
-            onChangeLabel={setBlueName}
-            onIncreaseScore={() => increaseScore('azul')}
-            onDecreaseScore={() => decreaseScore('azul')}
-            onIncreaseFoul={() => setBlueFouls((value) => value + 1)}
-            onDecreaseFoul={() => setBlueFouls((value) => Math.max(0, value - 1))}
+            label={leftCompetitor.label}
+            score={leftCompetitor.score}
+            fouls={leftCompetitor.fouls}
+            pencilSide={leftCompetitor.pencilSide}
+            onChangeLabel={leftCompetitor.onChangeLabel}
+            onIncreaseScore={leftCompetitor.onIncreaseScore}
+            onDecreaseScore={leftCompetitor.onDecreaseScore}
+            onIncreaseFoul={leftCompetitor.onIncreaseFoul}
+            onDecreaseFoul={leftCompetitor.onDecreaseFoul}
           />
 
           <CompetitorCard
-            label={redName}
-            score={redScore}
-            fouls={redFouls}
-            onChangeLabel={setRedName}
-            onIncreaseScore={() => increaseScore('rojo')}
-            onDecreaseScore={() => decreaseScore('rojo')}
-            onIncreaseFoul={() => setRedFouls((value) => value + 1)}
-            onDecreaseFoul={() => setRedFouls((value) => Math.max(0, value - 1))}
+            label={rightCompetitor.label}
+            score={rightCompetitor.score}
+            fouls={rightCompetitor.fouls}
+            pencilSide={rightCompetitor.pencilSide}
+            onChangeLabel={rightCompetitor.onChangeLabel}
+            onIncreaseScore={rightCompetitor.onIncreaseScore}
+            onDecreaseScore={rightCompetitor.onDecreaseScore}
+            onIncreaseFoul={rightCompetitor.onIncreaseFoul}
+            onDecreaseFoul={rightCompetitor.onDecreaseFoul}
           />
 
           <View pointerEvents="none" style={styles.logoCenterOverlay}>
@@ -242,9 +361,14 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <Pressable style={styles.configFab} onPress={() => setIsConfigVisible(true)}>
-          <Ionicons name="settings-sharp" size={22} color="#ffffff" />
-        </Pressable>
+        <View style={styles.bottomFabRow}>
+          <Pressable style={styles.configFab} onPress={handleSwap}>
+            <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
+          </Pressable>
+          <Pressable style={styles.configFab} onPress={() => setIsConfigVisible(true)}>
+            <Ionicons name="settings-sharp" size={22} color="#ffffff" />
+          </Pressable>
+        </View>
       </View>
 
       {activeVideoSource ? (
@@ -313,10 +437,23 @@ export default function HomeScreen() {
   );
 }
 
+// Type declarations for the Web Presentation API (not in standard TS lib)
+declare class PresentationRequest {
+  constructor(urls: string[]);
+  start(): Promise<unknown>;
+}
+
+interface PresentationNavigator {
+  presentation?: {
+    defaultRequest: unknown;
+  };
+}
+
 type CompetitorCardProps = {
   label: string;
   score: number;
   fouls: number;
+  pencilSide: 'left' | 'right';
   onChangeLabel: (value: string) => void;
   onIncreaseScore: () => void;
   onDecreaseScore: () => void;
@@ -328,6 +465,7 @@ function CompetitorCard({
   label,
   score,
   fouls,
+  pencilSide,
   onChangeLabel,
   onIncreaseScore,
   onDecreaseScore,
@@ -372,9 +510,17 @@ function CompetitorCard({
     [onDecreaseScore, onIncreaseScore]
   );
 
+  const pencilButton = (
+    <Pressable style={styles.nameEditButton} onPress={() => setIsEditingName((value) => !value)}>
+      <Ionicons name="pencil" size={16} color="#ffffff" />
+    </Pressable>
+  );
+
   return (
     <View style={styles.competitorCard}>
       <View style={styles.competitorHeaderRow}>
+        {pencilSide === 'left' && pencilButton}
+
         {isEditingName ? (
           <TextInput
             value={label}
@@ -383,15 +529,14 @@ function CompetitorCard({
             placeholderTextColor="rgba(255,255,255,0.6)"
             style={styles.competitorLabelInput}
             autoFocus
+            selectTextOnFocus
             onBlur={() => setIsEditingName(false)}
           />
         ) : (
           <Text style={styles.competitorLabelText}>{label}</Text>
         )}
 
-        <Pressable style={styles.nameEditButton} onPress={() => setIsEditingName((value) => !value)}>
-          <Ionicons name="pencil" size={16} color="#ffffff" />
-        </Pressable>
+        {pencilSide === 'right' && pencilButton}
       </View>
 
       <View style={styles.scoreZone} {...scoreGestureResponder.panHandlers}>
@@ -479,6 +624,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  topRightButtons: {
+    position: 'absolute',
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  castButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logo: {
     width: 560,
     height: 170,
@@ -494,8 +656,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   infoButton: {
-    position: 'absolute',
-    right: 0,
     width: 28,
     height: 28,
     borderRadius: 14,
@@ -600,11 +760,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#ffffff',
   },
-  configFab: {
+  bottomFabRow: {
     position: 'absolute',
     left: '50%',
     bottom: 18,
-    marginLeft: -21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    transform: [{ translateX: '-50%' }],
+  },
+  configFab: {
     width: 42,
     height: 42,
     borderRadius: 21,
