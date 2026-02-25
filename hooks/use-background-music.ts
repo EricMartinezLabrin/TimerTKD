@@ -1,13 +1,38 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import { Paths, File } from 'expo-file-system';
 
-const MUSIC_ASSETS = [
-  require('@/assets/music/Berserkers_Unidos.mp3'),
-  require('@/assets/music/El_Camino_de_Berserkers.mp3'),
+const STORAGE_KEY = '@custom_music_playlist';
+
+export type CustomTrack = {
+  id: string;
+  name: string;
+  uri: string;
+  isCustom: true;
+};
+
+export type DefaultTrack = {
+  id: string;
+  name: string;
+  source: any;
+  isCustom: false;
+};
+
+export type Track = DefaultTrack | CustomTrack;
+
+const DEFAULT_MUSIC_ASSETS: DefaultTrack[] = [
+  { id: 'default_1', name: 'Berserkers Unidos', source: require('@/assets/music/Berserkers_Unidos.mp3'), isCustom: false },
+  { id: 'default_2', name: 'El Camino de Berserkers', source: require('@/assets/music/El_Camino_de_Berserkers.mp3'), isCustom: false },
 ];
 
 export function useBackgroundMusic() {
   const soundRef = useRef<Audio.Sound | null>(null);
+  
+  const [customTracks, setCustomTracks] = useState<CustomTrack[]>([]);
+  const playlist = [...DEFAULT_MUSIC_ASSETS, ...customTracks];
+  
   const [currentSongIndex, setCurrentSongIndex] = useState(0);
 
   const isPlayingRef = useRef(false);
@@ -16,8 +41,67 @@ export function useBackgroundMusic() {
   const [volume, setVolumeState] = useState(0.7);
   const [isEnabled, setIsEnabledState] = useState(true);
 
+  // Load custom tracks on init
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
+      if (data) {
+        setCustomTracks(JSON.parse(data));
+      }
+    }).catch(console.warn);
+  }, []);
+
+  const addCustomTrack = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: false,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) return;
+
+      const asset = result.assets[0];
+      const newFile = new File(Paths.document, `${Date.now()}_${asset.name.replace(/[^a-zA-Z0-9.\-_]/g, '')}`);
+      
+      await new File(asset.uri).copy(newFile);
+
+      const newTrack: CustomTrack = {
+        id: Date.now().toString(),
+        name: asset.name,
+        uri: newFile.uri,
+        isCustom: true,
+      };
+
+      const newTracks = [...customTracks, newTrack];
+      setCustomTracks(newTracks);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newTracks));
+    } catch (e) {
+      console.warn("Error adding custom track", e);
+    }
+  };
+
+  const removeCustomTrack = async (id: string) => {
+    const trackToRemove = customTracks.find(t => t.id === id);
+    if (trackToRemove) {
+      try {
+        await new File(trackToRemove.uri).delete();
+      } catch {}
+    }
+    const newTracks = customTracks.filter(t => t.id !== id);
+    setCustomTracks(newTracks);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newTracks));
+    
+    // adjust current index safely if we were playing the deleted track or a track after it
+    // simple fallback: reset to 0 to prevent out of bounds
+    setCurrentSongIndex(0); 
+  };
+
+  const playSongAtIndex = (index: number) => {
+    if (index >= 0 && index < playlist.length) {
+      setCurrentSongIndex(index);
+    }
+  };
+
   const setVolume = useCallback(async (v: number) => {
-    // Clamp between 0 and 1
     const safeVolume = Math.max(0, Math.min(1, v));
     setVolumeState(safeVolume);
     volumeRef.current = safeVolume;
@@ -42,9 +126,7 @@ export function useBackgroundMusic() {
     isPlayingRef.current = play;
     if (soundRef.current) {
       if (play && isEnabledRef.current) {
-        soundRef.current.playAsync().then(() => {
-          // If the audio context was suspended on web, playAsync attempts to resume it.
-        }).catch((e) => {
+        soundRef.current.playAsync().then(() => {}).catch((e) => {
           console.warn("Background music play failed:", e);
         });
       } else {
@@ -69,8 +151,13 @@ export function useBackgroundMusic() {
           staysActiveInBackground: true,
         }).catch(() => {});
 
+        // Safely bound index
+        const actualIndex = currentSongIndex < playlist.length ? currentSongIndex : 0;
+        const track = playlist[actualIndex];
+        const source = track.isCustom ? { uri: track.uri } : track.source;
+
         const { sound } = await Audio.Sound.createAsync(
-          MUSIC_ASSETS[currentSongIndex],
+          source,
           {
             shouldPlay: isPlayingRef.current && isEnabledRef.current,
             volume: volumeRef.current,
@@ -87,9 +174,8 @@ export function useBackgroundMusic() {
 
         sound.setOnPlaybackStatusUpdate((status) => {
           if ('didJustFinish' in status && status.didJustFinish) {
-            // Unload current and trigger next song load
             sound.unloadAsync().catch(() => {});
-            setCurrentSongIndex((prev) => (prev + 1) % MUSIC_ASSETS.length);
+            setCurrentSongIndex((prev) => (prev + 1) % playlist.length);
           }
         });
       } catch (e) {
@@ -108,7 +194,7 @@ export function useBackgroundMusic() {
         }
       }
     };
-  }, [currentSongIndex]);
+  }, [currentSongIndex, customTracks.length]);
 
   return {
     setIsPlaying,
@@ -116,5 +202,10 @@ export function useBackgroundMusic() {
     setVolume,
     isEnabled,
     setIsEnabled,
+    playlist,
+    currentSongIndex,
+    playSongAtIndex,
+    addCustomTrack,
+    removeCustomTrack,
   };
 }

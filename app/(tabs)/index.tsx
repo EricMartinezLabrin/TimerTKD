@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer, type VideoSource } from 'expo-video';
-import { Animated, Modal, PanResponder, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Animated, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSoundEffects } from '@/hooks/use-sound-effects';
 import { useBackgroundMusic } from '@/hooks/use-background-music';
@@ -29,6 +29,9 @@ export default function HomeScreen() {
   const [durationInput, setDurationInput] = useState(String(DEFAULT_TIME_SECONDS));
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_TIME_SECONDS);
   const [isRunning, setIsRunning] = useState(false);
+  const [isDelayTimerStart, setIsDelayTimerStart] = useState(true);
+  const [isCountdownActive, setIsCountdownActive] = useState(false);
+  
   const [isHelpVisible, setIsHelpVisible] = useState(false);
   const [isConfigVisible, setIsConfigVisible] = useState(false);
   const [activeVideoSource, setActiveVideoSource] = useState<VideoSource>(null);
@@ -76,6 +79,31 @@ export default function HomeScreen() {
       }
     };
   }, [activeVideoSource, videoPlayer]);
+
+  const countdownDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      if (isDelayTimerStart) {
+        countdownDelayRef.current = setTimeout(() => {
+          setIsCountdownActive(true);
+        }, OVERLAY_DURATION_MS);
+      } else {
+        setIsCountdownActive(true);
+      }
+    } else {
+      if (countdownDelayRef.current) {
+        clearTimeout(countdownDelayRef.current);
+        countdownDelayRef.current = null;
+      }
+      setIsCountdownActive(false);
+    }
+    return () => {
+      if (countdownDelayRef.current) {
+        clearTimeout(countdownDelayRef.current);
+      }
+    };
+  }, [isRunning, isDelayTimerStart]);
 
   const musicTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -204,7 +232,7 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
-    if (!isRunning || remainingSeconds <= 0) {
+    if (!isCountdownActive || remainingSeconds <= 0) {
       return;
     }
 
@@ -218,11 +246,11 @@ export default function HomeScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, remainingSeconds]);
+  }, [isCountdownActive, remainingSeconds]);
 
   // Handle timer reaching zero safely outside the interval state setter
   useEffect(() => {
-    if (isRunning && remainingSeconds === 0) {
+    if (isCountdownActive && remainingSeconds === 0) {
       setIsRunning(false);
       playSound('matchEnd');
       
@@ -234,7 +262,7 @@ export default function HomeScreen() {
         setRemainingSeconds(safeSeconds);
       }, 1500);
     }
-  }, [remainingSeconds, isRunning, durationInput, playSound]);
+  }, [remainingSeconds, isCountdownActive, durationInput, playSound]);
 
   const formattedTime = useMemo(() => {
     const minutes = Math.floor(remainingSeconds / 60)
@@ -385,12 +413,14 @@ export default function HomeScreen() {
         <View style={styles.topControlsRow}>
           <View style={styles.timerCompact}>
             <Text style={styles.timerCompactText}>{formattedTime}</Text>
-            <Pressable style={styles.controlIconButton} onPress={handleToggleTimer}>
-              <Ionicons name={isRunning ? 'pause' : 'play'} size={20} color="#ffffff" />
-            </Pressable>
-            <Pressable style={styles.controlIconButton} onPress={handleResetMatch}>
-              <Ionicons name="refresh" size={20} color="#ffffff" />
-            </Pressable>
+            <View style={styles.timerButtonsRow}>
+              <Pressable style={styles.controlIconButton} onPress={handleToggleTimer}>
+                <Ionicons name={isRunning ? 'pause' : 'play'} size={18} color="#ffffff" />
+              </Pressable>
+              <Pressable style={styles.controlIconButton} onPress={handleResetMatch}>
+                <Ionicons name="refresh" size={18} color="#ffffff" />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.topRightButtons}>
@@ -510,6 +540,49 @@ export default function HomeScreen() {
                 <Ionicons name="volume-high" size={24} color="#ffffff" />
               </Pressable>
             </View>
+
+            <View style={styles.configDivider} />
+
+            <View style={styles.musicConfigRow}>
+              <Text style={styles.configTitle}>Esperar a que termine la animación</Text>
+              <Switch
+                value={isDelayTimerStart}
+                onValueChange={setIsDelayTimerStart}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#0b51ff' }}
+                thumbColor="#ffffff"
+              />
+            </View>
+
+            <View style={styles.configDivider} />
+
+            <View style={styles.musicConfigRow}>
+              <Text style={styles.configTitle}>Playlist ({music.playlist.length})</Text>
+              <Pressable style={styles.addTrackButton} onPress={music.addCustomTrack}>
+                <Ionicons name="add" size={18} color="#ffffff" />
+                <Text style={styles.addTrackText}>Cargar</Text>
+              </Pressable>
+            </View>
+            
+            <ScrollView style={styles.playlistContainerScroll} contentContainerStyle={styles.playlistContainer}>
+              {music.playlist.map((track, i) => {
+                const isSelected = i === music.currentSongIndex;
+                return (
+                  <View key={track.id} style={[styles.playlistTrack, isSelected && styles.playlistTrackActive]}>
+                    <Pressable style={styles.trackContent} onPress={() => music.playSongAtIndex(i)}>
+                      <Ionicons name={isSelected ? "musical-notes" : "musical-notes-outline"} size={14} color={isSelected ? "#0b51ff" : "rgba(255,255,255,0.6)"} />
+                      <Text style={[styles.trackName, isSelected && styles.trackNameActive]} numberOfLines={1}>
+                        {track.name}
+                      </Text>
+                    </Pressable>
+                    {track.isCustom && (
+                      <Pressable style={styles.removeTrackBtn} onPress={() => music.removeCustomTrack(track.id)}>
+                        <Ionicons name="trash-outline" size={14} color="rgba(255,100,100,0.8)" />
+                      </Pressable>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
 
             <Pressable style={styles.closeButton} onPress={() => setIsConfigVisible(false)}>
               <Text style={styles.closeButtonText}>Cerrar</Text>
@@ -697,9 +770,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 72,
-    gap: 8,
+    paddingTop: 0,
+    paddingBottom: 60,
+    gap: 0,
     zIndex: 2,
   },
   topControlsRow: {
@@ -707,11 +780,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    zIndex: 10,
   },
   timerCompact: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    gap: 0,
   },
   timerCompactText: {
     color: '#ffffff',
@@ -719,13 +793,18 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2,
   },
+  timerButtonsRow: {
+    flexDirection: 'row',
+    gap: 24,
+    marginTop: -4,
+  },
   controlIconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.38)',
-    backgroundColor: 'rgba(0,0,0,0.24)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -967,6 +1046,66 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     width: 60,
     textAlign: 'center',
+  },
+  addTrackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  addTrackText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  playlistContainerScroll: {
+    marginTop: 8,
+    maxHeight: 180,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+  },
+  playlistContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    padding: 6,
+    gap: 6,
+  },
+  playlistTrack: {
+    width: '49%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  playlistTrackActive: {
+    backgroundColor: 'rgba(11,81,255,0.15)',
+    borderColor: 'rgba(11,81,255,0.4)',
+    borderWidth: 1,
+  },
+  trackContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  trackName: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
+    flexShrink: 1,
+  },
+  trackNameActive: {
+    color: '#ffffff',
+    fontWeight: '700',
+  },
+  removeTrackBtn: {
+    padding: 4,
   },
   modalOverlay: {
     flex: 1,
