@@ -23,6 +23,7 @@ export default function HomeScreen() {
   const [blueName, setBlueName] = useState('Azul');
   const [redName, setRedName] = useState('Rojo');
   const [isSwapped, setIsSwapped] = useState(false);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
 
   const [durationInput, setDurationInput] = useState(String(DEFAULT_TIME_SECONDS));
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_TIME_SECONDS);
@@ -30,7 +31,8 @@ export default function HomeScreen() {
   const [isHelpVisible, setIsHelpVisible] = useState(false);
   const [isConfigVisible, setIsConfigVisible] = useState(false);
   const [activeVideoSource, setActiveVideoSource] = useState<VideoSource>(null);
-  const videoOverlayOpacity = useRef(new Animated.Value(0)).current;
+  const videoOpacity = useRef(new Animated.Value(0)).current;
+  const logoOpacity = useRef(new Animated.Value(1)).current;
   const hasStartedOverlayAnimation = useRef(false);
   const sourceSwapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationFallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,7 +44,12 @@ export default function HomeScreen() {
 
   const videoPlayer = useVideoPlayer(null, (player) => {
     player.loop = false;
+    player.volume = isVideoMuted ? 0 : 1;
   });
+
+  useEffect(() => {
+    videoPlayer.volume = isVideoMuted ? 0 : 1;
+  }, [isVideoMuted, videoPlayer]);
 
   useEffect(() => {
     if (!activeVideoSource) {
@@ -75,23 +82,45 @@ export default function HomeScreen() {
 
     hasStartedOverlayAnimation.current = true;
 
-    videoOverlayOpacity.stopAnimation();
-    videoOverlayOpacity.setValue(1);
+    // Cross-fade: logo out, video in
+    videoOpacity.stopAnimation();
+    logoOpacity.stopAnimation();
 
-    Animated.sequence([
-      Animated.delay(OVERLAY_DURATION_MS - 480),
-      Animated.timing(videoOverlayOpacity, {
+    Animated.parallel([
+      Animated.timing(logoOpacity, {
         toValue: 0,
-        duration: 480,
+        duration: 400,
+        useNativeDriver: false,
+      }),
+      Animated.timing(videoOpacity, {
+        toValue: 1,
+        duration: 400,
         useNativeDriver: false,
       }),
     ]).start(() => {
-      setActiveVideoSource(null);
-      hasStartedOverlayAnimation.current = false;
-      if (animationFallbackTimeoutRef.current) {
-        clearTimeout(animationFallbackTimeoutRef.current);
-        animationFallbackTimeoutRef.current = null;
-      }
+      // After video duration, cross-fade back: video out, logo in
+      Animated.sequence([
+        Animated.delay(OVERLAY_DURATION_MS - 800),
+        Animated.parallel([
+          Animated.timing(videoOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: false,
+          }),
+          Animated.timing(logoOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: false,
+          }),
+        ]),
+      ]).start(() => {
+        setActiveVideoSource(null);
+        hasStartedOverlayAnimation.current = false;
+        if (animationFallbackTimeoutRef.current) {
+          clearTimeout(animationFallbackTimeoutRef.current);
+          animationFallbackTimeoutRef.current = null;
+        }
+      });
     });
   }
 
@@ -110,8 +139,10 @@ export default function HomeScreen() {
     }, 30);
 
     hasStartedOverlayAnimation.current = false;
-    videoOverlayOpacity.stopAnimation();
-    videoOverlayOpacity.setValue(0);
+    videoOpacity.stopAnimation();
+    videoOpacity.setValue(0);
+    logoOpacity.stopAnimation();
+    logoOpacity.setValue(1);
   };
 
   const handleToggleTimer = () => {
@@ -140,8 +171,10 @@ export default function HomeScreen() {
 
     setActiveVideoSource(null);
     hasStartedOverlayAnimation.current = false;
-    videoOverlayOpacity.stopAnimation();
-    videoOverlayOpacity.setValue(0);
+    videoOpacity.stopAnimation();
+    videoOpacity.setValue(0);
+    logoOpacity.stopAnimation();
+    logoOpacity.setValue(1);
   };
 
   useEffect(() => {
@@ -357,7 +390,23 @@ export default function HomeScreen() {
           />
 
           <View pointerEvents="none" style={styles.logoCenterOverlay}>
-            <Image source={require('@/assets/images/Berserkers_logo.webp')} style={styles.logo} contentFit="contain" />
+            <View style={styles.logoVideoContainer}>
+              <Animated.View style={[styles.logoInner, { opacity: logoOpacity }]}>
+                <Image source={require('@/assets/images/Berserkers_logo.webp')} style={styles.logo} contentFit="contain" />
+              </Animated.View>
+
+              {activeVideoSource ? (
+                <Animated.View style={[styles.videoInner, { opacity: videoOpacity }]}>
+                  <VideoView
+                    player={videoPlayer}
+                    nativeControls={false}
+                    contentFit="cover"
+                    style={StyleSheet.absoluteFillObject}
+                    onFirstFrameRender={() => startVideoOverlayAnimationRef.current()}
+                  />
+                </Animated.View>
+              ) : null}
+            </View>
           </View>
         </View>
 
@@ -365,23 +414,14 @@ export default function HomeScreen() {
           <Pressable style={styles.configFab} onPress={handleSwap}>
             <Ionicons name="swap-horizontal" size={20} color="#ffffff" />
           </Pressable>
+          <Pressable style={styles.configFab} onPress={() => setIsVideoMuted((v) => !v)}>
+            <Ionicons name={isVideoMuted ? 'volume-mute' : 'volume-high'} size={20} color="#ffffff" />
+          </Pressable>
           <Pressable style={styles.configFab} onPress={() => setIsConfigVisible(true)}>
             <Ionicons name="settings-sharp" size={22} color="#ffffff" />
           </Pressable>
         </View>
       </View>
-
-      {activeVideoSource ? (
-        <Animated.View pointerEvents="none" style={[styles.videoOverlayMedia, { opacity: videoOverlayOpacity }]}>
-          <VideoView
-            player={videoPlayer}
-            nativeControls={false}
-            contentFit="contain"
-            style={StyleSheet.absoluteFillObject}
-            onFirstFrameRender={() => startVideoOverlayAnimationRef.current()}
-          />
-        </Animated.View>
-      ) : null}
 
       <Modal
         animationType="fade"
@@ -871,13 +911,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
   },
-  videoOverlayMedia: {
-    position: 'absolute',
-    zIndex: 20,
-    left: '28%',
-    top: '7%',
-    width: '44%',
-    height: '86%',
-    backgroundColor: 'transparent',
+  logoVideoContainer: {
+    width: 304,
+    height: 304,
+    borderRadius: 9999,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoInner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoInner: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 9999,
+    overflow: 'hidden',
   },
 });
