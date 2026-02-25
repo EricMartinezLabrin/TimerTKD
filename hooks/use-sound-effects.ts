@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 
-type SoundType = 'scoreUp' | 'scoreDown' | 'foulUp' | 'foulDown' | 'timerStart' | 'timerPause';
+type SoundType = 'scoreUp' | 'scoreDown' | 'foulUp' | 'foulDown' | 'timerStart' | 'timerPause' | 'matchEnd';
 
 /**
  * Hook that provides a `playSound` function using the Web Audio API directly.
@@ -148,6 +148,76 @@ export function useSoundEffects() {
         osc.connect(gain);
         osc.start(now);
         osc.stop(now + 0.30);
+        break;
+      }
+
+      // ── Match END: Three-blast referee whistle ──
+      case 'matchEnd': {
+        // Creates 3 whistle blasts with vibrato to simulate a real referee whistle
+        const blasts = [
+          { start: 0, dur: 0.30 },
+          { start: 0.42, dur: 0.30 },
+          { start: 0.84, dur: 0.45 },  // last blast is longer
+        ];
+
+        for (const blast of blasts) {
+          const t = now + blast.start;
+
+          // Main whistle tone (~3200 Hz, typical pea whistle)
+          const gain = ctx.createGain();
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0.001, t);
+          gain.gain.linearRampToValueAtTime(0.28, t + 0.02);  // quick attack
+          gain.gain.setValueAtTime(0.28, t + blast.dur - 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + blast.dur);
+
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(3200, t);
+          osc.connect(gain);
+          osc.start(t);
+          osc.stop(t + blast.dur);
+
+          // Vibrato LFO for realism (~30 Hz wobble)
+          const lfo = ctx.createOscillator();
+          const lfoGain = ctx.createGain();
+          lfo.frequency.setValueAtTime(30, t);
+          lfoGain.gain.setValueAtTime(80, t);  // ±80 Hz frequency modulation
+          lfo.connect(lfoGain);
+          lfoGain.connect(osc.frequency);
+          lfo.start(t);
+          lfo.stop(t + blast.dur);
+
+          // Harmonic overtone for brightness (~6400 Hz, quieter)
+          const gain2 = ctx.createGain();
+          gain2.connect(ctx.destination);
+          gain2.gain.setValueAtTime(0.001, t);
+          gain2.gain.linearRampToValueAtTime(0.08, t + 0.02);
+          gain2.gain.setValueAtTime(0.08, t + blast.dur - 0.04);
+          gain2.gain.exponentialRampToValueAtTime(0.001, t + blast.dur);
+
+          const osc2 = ctx.createOscillator();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(6400, t);
+          osc2.connect(gain2);
+          osc2.start(t);
+          osc2.stop(t + blast.dur);
+
+          // Noise-like hiss for air texture (high-freq triangle)
+          const gain3 = ctx.createGain();
+          gain3.connect(ctx.destination);
+          gain3.gain.setValueAtTime(0.001, t);
+          gain3.gain.linearRampToValueAtTime(0.04, t + 0.02);
+          gain3.gain.setValueAtTime(0.04, t + blast.dur - 0.04);
+          gain3.gain.exponentialRampToValueAtTime(0.001, t + blast.dur);
+
+          const osc3 = ctx.createOscillator();
+          osc3.type = 'triangle';
+          osc3.frequency.setValueAtTime(8500, t);
+          osc3.connect(gain3);
+          osc3.start(t);
+          osc3.stop(t + blast.dur);
+        }
         break;
       }
     }

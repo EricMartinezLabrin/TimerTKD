@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { VideoView, useVideoPlayer, type VideoSource } from 'expo-video';
-import { Animated, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Modal, PanResponder, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSoundEffects } from '@/hooks/use-sound-effects';
+import { useBackgroundMusic } from '@/hooks/use-background-music';
 
 const DEFAULT_TIME_SECONDS = 60;
 const OVERLAY_DURATION_MS = 5000;
@@ -39,6 +40,7 @@ export default function HomeScreen() {
   const startVideoOverlayAnimationRef = useRef(startVideoOverlayAnimation);
 
   const { playSound } = useSoundEffects();
+  const music = useBackgroundMusic();
 
   startVideoOverlayAnimationRef.current = startVideoOverlayAnimation;
 
@@ -74,6 +76,30 @@ export default function HomeScreen() {
       }
     };
   }, [activeVideoSource, videoPlayer]);
+
+  const musicTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      // Upon starting, delay music until video overlay finishes (5000ms)
+      musicTimeoutRef.current = setTimeout(() => {
+        music.setIsPlaying(true);
+      }, OVERLAY_DURATION_MS);
+    } else {
+      // Whenever stopped or paused, immediately clear any pending timeout and pause music
+      if (musicTimeoutRef.current) {
+        clearTimeout(musicTimeoutRef.current);
+        musicTimeoutRef.current = null;
+      }
+      music.setIsPlaying(false);
+    }
+
+    return () => {
+      if (musicTimeoutRef.current) {
+        clearTimeout(musicTimeoutRef.current);
+      }
+    };
+  }, [isRunning, music.setIsPlaying]);
 
   function startVideoOverlayAnimation() {
     if (hasStartedOverlayAnimation.current) {
@@ -186,7 +212,10 @@ export default function HomeScreen() {
       setRemainingSeconds((previous) => {
         if (previous <= 1) {
           setIsRunning(false);
-          return 0;
+          playSound('matchEnd');
+          // Reset countdown safely to input duration or default
+          const parsedSeconds = Number.parseInt(durationInput, 10);
+          return Number.isFinite(parsedSeconds) && parsedSeconds > 0 ? parsedSeconds : DEFAULT_TIME_SECONDS;
         }
 
         return previous - 1;
@@ -194,7 +223,7 @@ export default function HomeScreen() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, remainingSeconds]);
+  }, [isRunning, remainingSeconds, durationInput, playSound]);
 
   const formattedTime = useMemo(() => {
     const minutes = Math.floor(remainingSeconds / 60)
@@ -401,7 +430,7 @@ export default function HomeScreen() {
                     player={videoPlayer}
                     nativeControls={false}
                     contentFit="cover"
-                    style={StyleSheet.absoluteFillObject}
+                    style={[StyleSheet.absoluteFillObject, { backgroundColor: 'transparent' }]}
                     onFirstFrameRender={() => startVideoOverlayAnimationRef.current()}
                   />
                 </Animated.View>
@@ -449,6 +478,31 @@ export default function HomeScreen() {
                 <Text style={styles.configApplyText}>Guardar</Text>
               </Pressable>
             </View>
+
+            <View style={styles.configDivider} />
+
+            <View style={styles.musicConfigRow}>
+              <Text style={styles.configTitle}>Música de fondo</Text>
+              <Switch
+                value={music.isEnabled}
+                onValueChange={music.setIsEnabled}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#0b51ff' }}
+                thumbColor="#ffffff"
+              />
+            </View>
+            <View style={styles.musicVolumeRow}>
+              <Pressable style={styles.volumeButton} onPress={() => music.setVolume(music.volume - 0.1)}>
+                <Ionicons name="volume-low" size={24} color="#ffffff" />
+              </Pressable>
+              <Text style={styles.musicVolumeText}>{Math.round(music.volume * 100)}%</Text>
+              <Pressable style={styles.volumeButton} onPress={() => music.setVolume(music.volume + 0.1)}>
+                <Ionicons name="volume-high" size={24} color="#ffffff" />
+              </Pressable>
+            </View>
+
+            <Pressable style={styles.closeButton} onPress={() => setIsConfigVisible(false)}>
+              <Text style={styles.closeButtonText}>Cerrar</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -869,6 +923,40 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
   },
+  configDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginVertical: 4,
+  },
+  musicConfigRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  musicVolumeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    paddingTop: 4,
+  },
+  volumeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  musicVolumeText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '900',
+    width: 60,
+    textAlign: 'center',
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -918,15 +1006,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   logoInner: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   videoInner: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 9999,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
 });
