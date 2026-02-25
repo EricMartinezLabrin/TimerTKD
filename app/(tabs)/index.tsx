@@ -211,19 +211,30 @@ export default function HomeScreen() {
     const interval = setInterval(() => {
       setRemainingSeconds((previous) => {
         if (previous <= 1) {
-          setIsRunning(false);
-          playSound('matchEnd');
-          // Reset countdown safely to input duration or default
-          const parsedSeconds = Number.parseInt(durationInput, 10);
-          return Number.isFinite(parsedSeconds) && parsedSeconds > 0 ? parsedSeconds : DEFAULT_TIME_SECONDS;
+          return 0; // stop at 0
         }
-
         return previous - 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isRunning, remainingSeconds, durationInput, playSound]);
+  }, [isRunning, remainingSeconds]);
+
+  // Handle timer reaching zero safely outside the interval state setter
+  useEffect(() => {
+    if (isRunning && remainingSeconds === 0) {
+      setIsRunning(false);
+      playSound('matchEnd');
+      
+      const parsedSeconds = Number.parseInt(durationInput, 10);
+      const safeSeconds = Number.isFinite(parsedSeconds) && parsedSeconds > 0 ? parsedSeconds : DEFAULT_TIME_SECONDS;
+      
+      // Delay the UI reset slightly so they can see "00:00" for a moment
+      setTimeout(() => {
+        setRemainingSeconds(safeSeconds);
+      }, 1500);
+    }
+  }, [remainingSeconds, isRunning, durationInput, playSound]);
 
   const formattedTime = useMemo(() => {
     const minutes = Math.floor(remainingSeconds / 60)
